@@ -4,13 +4,44 @@
 
 #include <iostream>
 
+/**
+ * ----- Sphere -----
+ * center of Sphere: C(x0, y0, z0)
+ * radius: r²
+ * Notation: (x-x0)² + (y-y0)² + (z-z0)² = r²
+ * Vector notation: ∥ P - C ∥² = r²
+ *
+ * (P is any point, C is center of sphere)
+ *
+ * ----- Ray -----
+ * formula: P(t) = A + tB
+ *
+ * (A is origin of ray, B is direction of ray)
+ *
+ * So the equation of Sphere could be written as: ∥P(t) - C∥² = r²
+ * And rewritten: ∥ O + tB∥² = r² where O = A - C
+ *
+ * We can now develop it as:
+ * = (O + tB) ⋅ (O + tB) = r²
+ * = (O ⋅ O) + 2t(O ⋅ B) + t²(B ⋅ B) = 0
+ *
+ * if the result of above calculation is >= to 0 we assume it's ok.
+ * but we can actually improve it using for getting the value of 't' that represents the distance (or “time”) it takes to travel along the radius to reach the sphere.
+ * if the discriminant >= 0 then:
+ * t = (-b - sqrt(discriminant)) / 2a
+ *
+ * @param center
+ * @param radius
+ * @param r
+ * @return
+ */
 bool hit_sphere(const point3& center, double radius, const ray& r)
 {
-    vec3 oc = r.origin() - center;
-    auto dirLengthSquared = dot(r.direction(), r.direction());
-    auto alignment = -2 * dot(r.direction(), oc);
-    auto diffSquared = dot(oc, oc) - radius * radius;
-    auto discriminant = alignment * alignment - 4 * dirLengthSquared * diffSquared;
+    vec3 originSphere = r.origin() - center; // O = A - C
+    auto a = dot(r.direction(), r.direction()); // O ⋅ O
+    auto b = 2 * dot(originSphere, r.direction()); // 2(O ⋅ B)
+    auto c = dot(originSphere, originSphere) - radius * radius; // O ⋅ O - r²
+    auto discriminant = b * b - 4 * a * c; // at² + bt + c = 0
 
     return discriminant >= 0;
 }
