@@ -5,6 +5,8 @@
   <a href="https://raytracing.github.io/books/RayTracingInOneWeekend.html"><em>Ray Tracing in One Weekend</em></a>
 </p>
 
+<div align="center"><img src="presentation.png" width="200" /></div>
+
 ---
 
 ## 🌟 About
