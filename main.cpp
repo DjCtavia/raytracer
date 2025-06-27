@@ -38,9 +38,9 @@
 double hit_sphere(const point3& center, double radius, const ray& r)
 {
     vec3 originSphere = r.origin() - center; // O = A - C
-    auto a = dot(r.direction(), r.direction()); // O ⋅ O
+    auto a = r.direction().length_squared(); // O ⋅ O or squared length
     auto b = 2 * dot(originSphere, r.direction()); // 2(O ⋅ B)
-    auto c = dot(originSphere, originSphere) - radius * radius; // O ⋅ O - r²
+    auto c = originSphere.length_squared() - radius * radius; // O ⋅ O (or squared length) - r²
     auto discriminant = b * b - 4 * a * c; // at² + bt + c = 0
 
     return discriminant < 0
