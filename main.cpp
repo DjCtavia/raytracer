@@ -71,7 +71,7 @@ color ray_color(const ray& r)
     return (1.0 - a) * color(1.0, 1.0, 1.0) + a * color(0.5, 0.7, 1.0);
 }
 
-// === Shaders for quad display ===
+// Shaders for quad display
 const char* vertexShaderSource = R"(
 #version 330 core
 layout (location = 0) in vec2 aPos;
@@ -101,7 +101,7 @@ GLuint compileShader(GLenum type, const char* src) {
     if (!success) {
         char infoLog[512];
         glGetShaderInfoLog(shader, 512, nullptr, infoLog);
-        std::cerr << "Erreur compilation shader: " << infoLog << std::endl;
+        std::cerr << "Shader compilation error: " << infoLog << std::endl;
     }
     return shader;
 }
@@ -132,7 +132,7 @@ int main() {
 
     // GLAD initialization
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
-        std::cerr << "Erreur d'initialisation de GLAD" << std::endl;
+        std::cerr << "GLAD initialization failed" << std::endl;
         return -1;
     }
 
