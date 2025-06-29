@@ -1,7 +1,3 @@
-//
-// Created by Etienne on 26/06/2025.
-//
-
 #ifndef VEC3_H
 #define VEC3_H
 
@@ -116,6 +112,4 @@ inline vec3 unit_vector(const vec3& v) {
     return v / v.length();
 }
 
-inline float radians(const float deg) { return deg * 3.14159265f / 180.0f; }
-
-#endif //VEC3_H
+#endif

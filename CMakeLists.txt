@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.16)
 project(RayTracerImGui)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -7,13 +7,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Set source files
 file(GLOB_RECURSE SOURCES
     src/*.cpp
-    raytracer/*.cpp
-    main.cpp
 )
-# Exclude imgui examples
-list(FILTER SOURCES EXCLUDE REGEX ".*vendors/imgui/examples/.*")
 
 # GLFW
+set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 add_subdirectory(vendors/glfw)
 
 # GLAD
@@ -42,8 +41,8 @@ target_include_directories(imgui PUBLIC
 add_executable(raytracer ${SOURCES})
 
 # Includes
-target_include_directories(raytracer PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/raytracer
+target_include_directories(raytracer PRIVATE
+    src
     vendors/glad/include
     vendors/imgui
     vendors/imgui/backends
@@ -52,3 +51,8 @@ target_include_directories(raytracer PUBLIC
 
 # Link libraries
 target_link_libraries(raytracer PRIVATE glfw glad imgui)
+
+# Windows-specific linking
+if(WIN32)
+    target_link_libraries(raytracer PRIVATE opengl32)
+endif()

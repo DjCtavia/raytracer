@@ -1,6 +1,7 @@
 #include "color.h"
 #include "ray.h"
 #include "vec3.h"
+#include "camera.h"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -121,7 +122,6 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    float aspect_ratio = 16.0f / 9.0f;
     int image_width = 1280; // Example: 1280x720 (HD, < 1920x1080)
     int image_height = 720;
 
@@ -152,59 +152,26 @@ int main() {
     // Dynamic image variables
     std::vector<unsigned char> framebuffer(image_width * image_height * 3);
 
-    // Camera
-    auto focal_length = 1.0;
-    auto viewport_height = 2.0;
-    auto viewport_width = viewport_height * (double(image_width) / image_height);
-    auto camera_center = point3(0, 0, 0);
-    float camera_speed = 1.f;
-    vec3 front(0, 0, -1);
-    vec3 world_up(0, 1, 0);
-    vec3 camera_right = unit_vector(cross(front, world_up));
-    vec3 camera_up = unit_vector(cross(camera_right, front));
+    // Initialize Camera
+    Camera camera(image_width, image_height, point3(0, 0, 0), 1.0);
+    float camera_speed = 1.0f;
 
-    // Calculate the vectors across the horizontal and down the vertical viewport edges
-    auto viewport_u = viewport_width * camera_right;
-    auto viewport_v = viewport_height * -camera_up;
-
-    // Calculate the horizontal and vertical delta vectors from pixel to pixel
-    auto pixel_delta_u = viewport_u / image_width;
-    auto pixel_delta_v = viewport_v / image_height;
-
-    // Calculate the location of the upper left pixel.
-    auto viewport_center = camera_center + front * focal_length;
-    auto viewport_upper_left = viewport_center - viewport_u / 2 - viewport_v / 2;
-    auto pixel00_loc = viewport_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);
-
-    auto update_camera = [&]() {
-        viewport_height = 2.0;
-        viewport_width = viewport_height * (double(image_width) / image_height);
-        camera_right = unit_vector(cross(front, world_up));
-        camera_up = unit_vector(cross(camera_right, front));
-        viewport_u = viewport_width * camera_right;
-        viewport_v = viewport_height * -camera_up;
-        pixel_delta_u = viewport_u / image_width;
-        pixel_delta_v = viewport_v / image_height;
-        auto viewport_center = camera_center + front * focal_length;
-        viewport_upper_left = viewport_center - viewport_u / 2 - viewport_v / 2;
-        pixel00_loc = viewport_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);
-    };
-    update_camera();
-
-    // Raytracing: filling the framebuffer
-    for (int j = 0; j < image_height; j++) {
-        for (int i = 0; i < image_width; i++) {
-            auto pixel_center = pixel00_loc + (i * pixel_delta_u) + (j * pixel_delta_v);
-            auto ray_direction = pixel_center - camera_center;
-            ray r(camera_center, ray_direction);
-            color pixel_color = ray_color(r);
-            // Convert float [0,1] -> unsigned char [0,255]
-            int idx = (j * image_width + i) * 3;
-            framebuffer[idx + 0] = static_cast<unsigned char>(256 * std::clamp(pixel_color.x(), 0.0, 0.999));
-            framebuffer[idx + 1] = static_cast<unsigned char>(256 * std::clamp(pixel_color.y(), 0.0, 0.999));
-            framebuffer[idx + 2] = static_cast<unsigned char>(256 * std::clamp(pixel_color.z(), 0.0, 0.999));
+    // Helper function to render the scene
+    auto render_scene = [&]() {
+        for (int j = 0; j < image_height; j++) {
+            for (int i = 0; i < image_width; i++) {
+                ray r = camera.get_ray(i, j);
+                color pixel_color = ray_color(r);
+                int idx = (j * image_width + i) * 3;
+                framebuffer[idx + 0] = static_cast<unsigned char>(256 * std::clamp(pixel_color.x(), 0.0, 0.999));
+                framebuffer[idx + 1] = static_cast<unsigned char>(256 * std::clamp(pixel_color.y(), 0.0, 0.999));
+                framebuffer[idx + 2] = static_cast<unsigned char>(256 * std::clamp(pixel_color.z(), 0.0, 0.999));
+            }
         }
-    }
+    };
+
+    // Initial render
+    render_scene();
 
     // OpenGL texture creation
     GLuint tex = 0;
@@ -252,7 +219,6 @@ int main() {
 
     bool rightMousePressed = false;
     double lastMouseX = 0.0, lastMouseY = 0.0;
-    float yaw = 0.0f, pitch = 0.0f;
     float sensitivity = 0.2f;
     bool invertY = true;
 
@@ -263,7 +229,9 @@ int main() {
 
         glfwPollEvents();
 
-        bool direction_changed = false;
+        bool camera_updated = false;
+
+        // Mouse look controls
         if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
             if (!rightMousePressed) {
                 rightMousePressed = true;
@@ -276,11 +244,11 @@ int main() {
                 double offsetY = mouseY - lastMouseY;
                 lastMouseX = mouseX;
                 lastMouseY = mouseY;
-                yaw   += static_cast<float>(offsetX) * sensitivity;
-                pitch += static_cast<float>(invertY ? offsetY : -offsetY) * sensitivity;
-                if (pitch > 89.0f) pitch = 89.0f;
-                if (pitch < -89.0f) pitch = -89.0f;
-                direction_changed = true;
+
+                float delta_yaw = static_cast<float>(offsetX) * sensitivity;
+                float delta_pitch = static_cast<float>(invertY ? offsetY : -offsetY) * sensitivity;
+                camera.rotate(delta_yaw, delta_pitch);
+                camera_updated = true;
             }
         } else {
             if (rightMousePressed) {
@@ -289,56 +257,35 @@ int main() {
             rightMousePressed = false;
         }
 
-        // Inputs events
-        bool camera_moved = false;
+        // Keyboard movement controls
+        vec3 move_offset(0, 0, 0);
         if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-            camera_center -= unit_vector(cross(front, vec3(0,1,0))) * camera_speed * delta_time;
-            camera_moved = true;
+            move_offset -= camera.get_right() * camera_speed * static_cast<float>(delta_time);
         }
         if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-            camera_center += unit_vector(cross(front, vec3(0,1,0))) * camera_speed * delta_time;
-            camera_moved = true;
+            move_offset += camera.get_right() * camera_speed * static_cast<float>(delta_time);
         }
         if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-            camera_center += front * camera_speed * delta_time;
-            camera_moved = true;
+            move_offset += camera.get_forward() * camera_speed * static_cast<float>(delta_time);
         }
         if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-            camera_center -= front * camera_speed * delta_time;
-            camera_moved = true;
+            move_offset -= camera.get_forward() * camera_speed * static_cast<float>(delta_time);
         }
         if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
-            camera_center[1] -= camera_speed * delta_time;
-            camera_moved = true;
+            move_offset -= camera.get_up() * camera_speed * static_cast<float>(delta_time);
         }
         if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) {
-            camera_center[1] += camera_speed * delta_time;
-            camera_moved = true;
+            move_offset += camera.get_up() * camera_speed * static_cast<float>(delta_time);
         }
-        if (camera_moved || direction_changed) {
-            if (direction_changed) {
-                float yaw_rad = radians(yaw);
-                float pitch_rad = radians(pitch);
-                front.e[0] = cosf(yaw_rad) * cosf(pitch_rad);
-                front.e[1] = sinf(pitch_rad);
-                front.e[2] = sinf(yaw_rad) * cosf(pitch_rad);
-                front = unit_vector(front);
-            }
-            update_camera();
+
+        if (move_offset.length_squared() > 0) {
+            camera.move(move_offset);
+            camera_updated = true;
         }
-        if (camera_moved || direction_changed) {
-            for (int j = 0; j < image_height; j++) {
-                for (int i = 0; i < image_width; i++) {
-                    auto pixel_center = pixel00_loc + (i * pixel_delta_u) + (j * pixel_delta_v);
-                    auto ray_direction = pixel_center - camera_center;
-                    ray r(camera_center, ray_direction);
-                    color pixel_color = ray_color(r);
-                    int idx = (j * image_width + i) * 3;
-                    framebuffer[idx + 0] = static_cast<unsigned char>(256 * std::clamp(pixel_color.x(), 0.0, 0.999));
-                    framebuffer[idx + 1] = static_cast<unsigned char>(256 * std::clamp(pixel_color.y(), 0.0, 0.999));
-                    framebuffer[idx + 2] = static_cast<unsigned char>(256 * std::clamp(pixel_color.z(), 0.0, 0.999));
-                }
-            }
+
+        // Re-render if camera changed
+        if (camera_updated) {
+            render_scene();
             glBindTexture(GL_TEXTURE_2D, tex);
             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, image_width, image_height, GL_RGB, GL_UNSIGNED_BYTE, framebuffer.data());
         }
@@ -352,7 +299,8 @@ int main() {
         ImGui::Begin("Raytracer Output");
         if (ImGui::Button("Reload")) reload = true;
         ImGui::Text("delta_time: %.4f s", delta_time);
-        ImGui::Text("camera: [%.2f, %.2f, %.2f]", camera_center.x(), camera_center.y(), camera_center.z());
+        ImGui::Text("camera: [%.2f, %.2f, %.2f]", camera.get_position().x(), camera.get_position().y(), camera.get_position().z());
+        ImGui::Text("yaw: %.1f°, pitch: %.1f°", camera.get_yaw(), camera.get_pitch());
         ImGui::Separator();
         ImGui::Text("Camera:");
         ImGui::SliderFloat("Camera Speed", &camera_speed, 0.1f, 2.0f);
@@ -363,18 +311,7 @@ int main() {
 
         // If reload requested, recalculate image and reload texture
         if (reload) {
-            for (int j = 0; j < image_height; j++) {
-                for (int i = 0; i < image_width; i++) {
-                    auto pixel_center = pixel00_loc + (i * pixel_delta_u) + (j * pixel_delta_v);
-                    auto ray_direction = pixel_center - camera_center;
-                    ray r(camera_center, ray_direction);
-                    color pixel_color = ray_color(r);
-                    int idx = (j * image_width + i) * 3;
-                    framebuffer[idx + 0] = static_cast<unsigned char>(256 * std::clamp(pixel_color.x(), 0.0, 0.999));
-                    framebuffer[idx + 1] = static_cast<unsigned char>(256 * std::clamp(pixel_color.y(), 0.0, 0.999));
-                    framebuffer[idx + 2] = static_cast<unsigned char>(256 * std::clamp(pixel_color.z(), 0.0, 0.999));
-                }
-            }
+            render_scene();
             glBindTexture(GL_TEXTURE_2D, tex);
             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, image_width, image_height, GL_RGB, GL_UNSIGNED_BYTE, framebuffer.data());
             reload = false;
