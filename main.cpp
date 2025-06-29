@@ -11,6 +11,11 @@
 #include <iostream>
 #include <vector>
 #include <algorithm>
+#include <cmath>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 /**
  * ----- Sphere -----
@@ -152,27 +157,36 @@ int main() {
     auto viewport_height = 2.0;
     auto viewport_width = viewport_height * (double(image_width) / image_height);
     auto camera_center = point3(0, 0, 0);
+    float camera_speed = 1.f;
+    vec3 front(0, 0, -1);
+    vec3 world_up(0, 1, 0);
+    vec3 camera_right = unit_vector(cross(front, world_up));
+    vec3 camera_up = unit_vector(cross(camera_right, front));
 
     // Calculate the vectors across the horizontal and down the vertical viewport edges
-    auto viewport_u = vec3(viewport_width, 0, 0);
-    auto viewport_v = vec3(0, -viewport_height, 0);
+    auto viewport_u = viewport_width * camera_right;
+    auto viewport_v = viewport_height * -camera_up;
 
     // Calculate the horizontal and vertical delta vectors from pixel to pixel
     auto pixel_delta_u = viewport_u / image_width;
     auto pixel_delta_v = viewport_v / image_height;
 
     // Calculate the location of the upper left pixel.
-    auto viewport_upper_left = camera_center - vec3(0, 0, focal_length) - viewport_u / 2 - viewport_v / 2;
+    auto viewport_center = camera_center + front * focal_length;
+    auto viewport_upper_left = viewport_center - viewport_u / 2 - viewport_v / 2;
     auto pixel00_loc = viewport_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);
 
     auto update_camera = [&]() {
         viewport_height = 2.0;
         viewport_width = viewport_height * (double(image_width) / image_height);
-        viewport_u = vec3(viewport_width, 0, 0);
-        viewport_v = vec3(0, -viewport_height, 0);
+        camera_right = unit_vector(cross(front, world_up));
+        camera_up = unit_vector(cross(camera_right, front));
+        viewport_u = viewport_width * camera_right;
+        viewport_v = viewport_height * -camera_up;
         pixel_delta_u = viewport_u / image_width;
         pixel_delta_v = viewport_v / image_height;
-        viewport_upper_left = camera_center - vec3(0, 0, focal_length) - viewport_u / 2 - viewport_v / 2;
+        auto viewport_center = camera_center + front * focal_length;
+        viewport_upper_left = viewport_center - viewport_u / 2 - viewport_v / 2;
         pixel00_loc = viewport_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);
     };
     update_camera();
@@ -200,7 +214,7 @@ int main() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, image_width, image_height, 0, GL_RGB, GL_UNSIGNED_BYTE, framebuffer.data());
 
-    // === Shader program creation for fullscreen quad ===
+    // Shader program creation for fullscreen quad
     GLuint vertShader = compileShader(GL_VERTEX_SHADER, vertexShaderSource);
     GLuint fragShader = compileShader(GL_FRAGMENT_SHADER, fragmentShaderSource);
     GLuint shaderProgram = glCreateProgram();
@@ -233,10 +247,103 @@ int main() {
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
     glBindVertexArray(0);
 
+    double lastFrameTime = glfwGetTime();
+    double delta_time = 0.0f;
+
+    bool rightMousePressed = false;
+    double lastMouseX = 0.0, lastMouseY = 0.0;
+    float yaw = 0.0f, pitch = 0.0f;
+    float sensitivity = 0.2f;
+    bool invertY = true;
+
     while (!glfwWindowShouldClose(window)) {
+        double currentFrameTime = glfwGetTime();
+        delta_time = currentFrameTime - lastFrameTime;
+        lastFrameTime = currentFrameTime;
+
         glfwPollEvents();
 
-        // --- ImGui ---
+        bool direction_changed = false;
+        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
+            if (!rightMousePressed) {
+                rightMousePressed = true;
+                glfwGetCursorPos(window, &lastMouseX, &lastMouseY);
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            } else {
+                double mouseX, mouseY;
+                glfwGetCursorPos(window, &mouseX, &mouseY);
+                double offsetX = mouseX - lastMouseX;
+                double offsetY = mouseY - lastMouseY;
+                lastMouseX = mouseX;
+                lastMouseY = mouseY;
+                yaw   += static_cast<float>(offsetX) * sensitivity;
+                pitch += static_cast<float>(invertY ? offsetY : -offsetY) * sensitivity;
+                if (pitch > 89.0f) pitch = 89.0f;
+                if (pitch < -89.0f) pitch = -89.0f;
+                direction_changed = true;
+            }
+        } else {
+            if (rightMousePressed) {
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            }
+            rightMousePressed = false;
+        }
+
+        // Inputs events
+        bool camera_moved = false;
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+            camera_center -= unit_vector(cross(front, vec3(0,1,0))) * camera_speed * delta_time;
+            camera_moved = true;
+        }
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+            camera_center += unit_vector(cross(front, vec3(0,1,0))) * camera_speed * delta_time;
+            camera_moved = true;
+        }
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+            camera_center += front * camera_speed * delta_time;
+            camera_moved = true;
+        }
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+            camera_center -= front * camera_speed * delta_time;
+            camera_moved = true;
+        }
+        if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+            camera_center[1] -= camera_speed * delta_time;
+            camera_moved = true;
+        }
+        if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) {
+            camera_center[1] += camera_speed * delta_time;
+            camera_moved = true;
+        }
+        if (camera_moved || direction_changed) {
+            if (direction_changed) {
+                float yaw_rad = radians(yaw);
+                float pitch_rad = radians(pitch);
+                front.e[0] = cosf(yaw_rad) * cosf(pitch_rad);
+                front.e[1] = sinf(pitch_rad);
+                front.e[2] = sinf(yaw_rad) * cosf(pitch_rad);
+                front = unit_vector(front);
+            }
+            update_camera();
+        }
+        if (camera_moved || direction_changed) {
+            for (int j = 0; j < image_height; j++) {
+                for (int i = 0; i < image_width; i++) {
+                    auto pixel_center = pixel00_loc + (i * pixel_delta_u) + (j * pixel_delta_v);
+                    auto ray_direction = pixel_center - camera_center;
+                    ray r(camera_center, ray_direction);
+                    color pixel_color = ray_color(r);
+                    int idx = (j * image_width + i) * 3;
+                    framebuffer[idx + 0] = static_cast<unsigned char>(256 * std::clamp(pixel_color.x(), 0.0, 0.999));
+                    framebuffer[idx + 1] = static_cast<unsigned char>(256 * std::clamp(pixel_color.y(), 0.0, 0.999));
+                    framebuffer[idx + 2] = static_cast<unsigned char>(256 * std::clamp(pixel_color.z(), 0.0, 0.999));
+                }
+            }
+            glBindTexture(GL_TEXTURE_2D, tex);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, image_width, image_height, GL_RGB, GL_UNSIGNED_BYTE, framebuffer.data());
+        }
+
+        // ImGui
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
@@ -244,7 +351,14 @@ int main() {
         static bool reload = false;
         ImGui::Begin("Raytracer Output");
         if (ImGui::Button("Reload")) reload = true;
-        ImGui::Text("Some ImGui test here!");
+        ImGui::Text("delta_time: %.4f s", delta_time);
+        ImGui::Text("camera: [%.2f, %.2f, %.2f]", camera_center.x(), camera_center.y(), camera_center.z());
+        ImGui::Separator();
+        ImGui::Text("Camera:");
+        ImGui::SliderFloat("Camera Speed", &camera_speed, 0.1f, 2.0f);
+        ImGui::Text("Mouse Controls:");
+        ImGui::SliderFloat("Sensitivity", &sensitivity, 0.1f, 2.0f);
+        ImGui::Checkbox("Invert Y-axis", &invertY);
         ImGui::End();
 
         // If reload requested, recalculate image and reload texture
